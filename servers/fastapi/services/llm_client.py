@@ -1,6 +1,8 @@
 import asyncio
 import dirtyjson
 import json
+import logging
+import time
 from typing import AsyncGenerator, List, Optional
 from fastapi import HTTPException
 from openai import AsyncOpenAI
@@ -40,6 +42,21 @@ from models.llm_tool_call import (
 )
 from models.llm_tools import LLMDynamicTool, LLMTool
 from services.llm_tool_calls_handler import LLMToolCallsHandler
+# Metrics service - disabled for now due to import issues
+# from services.metrics_service import store_metric_async, initialize_metrics_table
+
+
+# Stub functions to prevent import errors
+async def store_metric_async(**kwargs):
+    """Stub function - metrics collection disabled"""
+    pass
+
+
+async def initialize_metrics_table():
+    """Stub function - metrics initialization disabled"""
+    pass
+
+
 from utils.async_iterator import iterator_to_async
 from utils.dummy_functions import do_nothing_async
 from utils.get_env import (
@@ -61,12 +78,33 @@ from utils.schema_utils import (
     remove_titles_from_schema,
 )
 
+# Monitoring and rate limiting
+from utils.rate_limiter import (
+    wait_if_rate_limited,
+    handle_rate_limit_error,
+    is_rate_limited,
+)
+from utils.request_queue import enqueue_request
+from utils.quota_monitor import record_request, record_rate_limit, record_error
+from utils.model_monitor import (
+    record_model_success,
+    record_model_failure,
+    should_rotate_model,
+)
+
+logger = logging.getLogger(__name__)
+
 
 class LLMClient:
     def __init__(self):
         self.llm_provider = get_llm_provider()
         self._client = self._get_client()
         self.tool_calls_handler = LLMToolCallsHandler(self)
+        # Initialize metrics table on first import
+        try:
+            asyncio.create_task(initialize_metrics_table())
+        except Exception as e:
+            logger.warning(f"Failed to initialize metrics table: {str(e)}")
 
     # ? Use tool calls
     def use_tool_calls_for_structured_output(self) -> bool:
@@ -197,18 +235,121 @@ class LLMClient:
         depth: int = 0,
     ) -> str | None:
         client: AsyncOpenAI = self._client
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[message.model_dump() for message in messages],
-            max_completion_tokens=max_tokens,
-            tools=tools,
-            extra_body=extra_body,
-        )
+        start_time = time.time()
+
+        # Check and handle rate limiting (only at depth 0)
+        if depth == 0:
+            was_rate_limited = await wait_if_rate_limited()
+            if was_rate_limited:
+                logger.info(
+                    f"Rate limit detected. Exponential backoff applied before retrying."
+                )
+                record_rate_limit()
+
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[message.model_dump() for message in messages],
+                max_completion_tokens=max_tokens,
+                tools=tools,
+                extra_body=extra_body,
+            )
+
+            # Log which model was actually used (important for OpenRouter fallback tracking)
+            model_used = response.model
+            print(
+                f"[MODEL_USAGE] LLM Request: Requested {model}, Used {model_used}",
+                flush=True,
+            )
+            logger.info(
+                f"LLM Request completed. Requested model: {model}, Actual model used: {model_used}"
+            )
+
+            # Capture metrics (only at depth 0 to avoid duplicate metrics from recursive calls)
+            if depth == 0:
+                response_time_ms = (time.time() - start_time) * 1000
+                tokens_input = response.usage.prompt_tokens if response.usage else 0
+                tokens_output = (
+                    response.usage.completion_tokens if response.usage else 0
+                )
+
+                logger.info(
+                    f"LLM Metrics - Model: {model_used}, Input tokens: {tokens_input}, "
+                    f"Output tokens: {tokens_output}, Response time: {response_time_ms:.2f}ms"
+                )
+
+                # Record model success and quota
+                total_tokens = tokens_input + tokens_output
+                try:
+                    record_model_success(model_used, response_time_ms, total_tokens)
+                    record_request(model_used, total_tokens)
+                except Exception as e:
+                    logger.warning(f"Failed to record model metrics: {str(e)}")
+
+                # Store metrics asynchronously (non-blocking)
+                try:
+                    asyncio.create_task(
+                        store_metric_async(
+                            model_name=model_used,
+                            tokens_input=tokens_input,
+                            tokens_output=tokens_output,
+                            response_time_ms=response_time_ms,
+                            status="success",
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store metrics: {str(e)}")
+        except Exception as e:
+            # Capture error metrics
+            response_time_ms = (time.time() - start_time) * 1000
+            logger.error(f"LLM Request failed: {str(e)}")
+
+            if depth == 0:
+                # Record model failure and general error
+                try:
+                    record_model_failure(model)
+                    record_error()
+
+                    # Check if it's a rate limit error (429)
+                    error_str = str(e).lower()
+                    if (
+                        "429" in error_str
+                        or "rate" in error_str
+                        or "too many requests" in error_str
+                    ):
+                        logger.warning(
+                            f"Rate limit error detected. Triggering exponential backoff."
+                        )
+                        handle_rate_limit_error()
+                        record_rate_limit()
+                except Exception as monitor_error:
+                    logger.warning(
+                        f"Failed to record error monitoring: {str(monitor_error)}"
+                    )
+
+                try:
+                    asyncio.create_task(
+                        store_metric_async(
+                            model_name=model,
+                            tokens_input=0,
+                            tokens_output=0,
+                            response_time_ms=response_time_ms,
+                            status="error",
+                            error_message=str(e),
+                        )
+                    )
+                except Exception as metric_error:
+                    logger.warning(
+                        f"Failed to store error metrics: {str(metric_error)}"
+                    )
+            raise
 
         if len(response.choices) == 0:
             return None
 
+        content = response.choices[0].message.content
         tool_calls = response.choices[0].message.tool_calls
+
         if tool_calls:
             parsed_tool_calls = [
                 OpenAIToolCall(
@@ -226,7 +367,7 @@ class LLMClient:
             )
             assistant_message = OpenAIAssistantMessage(
                 role="assistant",
-                content=response.choices[0].message.content,
+                content=content or "",  # Handle None content
                 tool_calls=[tool_call.model_dump() for tool_call in parsed_tool_calls],
             )
             new_messages = [
@@ -243,7 +384,14 @@ class LLMClient:
                 depth=depth + 1,
             )
 
-        return response.choices[0].message.content
+        # Return content, or empty string if None to prevent "no content" error
+        if content is None or (isinstance(content, str) and not content.strip()):
+            logger.warning(
+                f"LLM returned empty or None content for model: {model}. "
+                "This may happen with some free tier models. Returning empty response."
+            )
+            return ""
+        return content
 
     async def _generate_google(
         self,
@@ -441,11 +589,13 @@ class LLMClient:
                 content = await self._generate_custom(
                     model=model, messages=messages, max_tokens=max_tokens
                 )
-        if content is None:
-            raise HTTPException(
-                status_code=400,
-                detail="LLM did not return any content",
+        if content is None or (isinstance(content, str) and not content.strip()):
+            # Log warning but don't fail - some free models may return empty responses
+            logger.warning(
+                f"LLM returned empty or None content for model: {model}. "
+                "This may happen with some free tier models. Returning empty response."
             )
+            return ""
         return content
 
     # ? Generate Structured Content
@@ -461,6 +611,17 @@ class LLMClient:
         depth: int = 0,
     ) -> dict | None:
         client: AsyncOpenAI = self._client
+        start_time = time.time()
+
+        # Check and handle rate limiting (only at depth 0)
+        if depth == 0:
+            was_rate_limited = await wait_if_rate_limited()
+            if was_rate_limited:
+                logger.info(
+                    f"Rate limit detected. Exponential backoff applied before retrying."
+                )
+                record_rate_limit()
+
         response_schema = response_format
         all_tools = [*tools] if tools else None
 
@@ -488,29 +649,115 @@ class LLMClient:
                 )
             )
 
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[message.model_dump() for message in messages],
-            response_format=(
-                {
-                    "type": "json_schema",
-                    "json_schema": (
-                        {
-                            "name": "ResponseSchema",
-                            "strict": strict,
-                            "schema": response_schema,
-                        }
-                    ),
-                }
-                if not use_tool_calls_for_structured_output
-                else None
-            ),
-            max_completion_tokens=max_tokens,
-            tools=all_tools,
-            extra_body=extra_body,
-        )
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[message.model_dump() for message in messages],
+                response_format=(
+                    {
+                        "type": "json_schema",
+                        "json_schema": (
+                            {
+                                "name": "ResponseSchema",
+                                "strict": strict,
+                                "schema": response_schema,
+                            }
+                        ),
+                    }
+                    if not use_tool_calls_for_structured_output
+                    else None
+                ),
+                max_completion_tokens=max_tokens,
+                tools=all_tools,
+                extra_body=extra_body,
+            )
 
-        if len(response.choices) == 0:
+            # Log which model was actually used (important for OpenRouter fallback tracking)
+            model_used = response.model
+            logger.info(
+                f"LLM Structured Request completed. Requested model: {model}, Actual model used: {model_used}"
+            )
+
+            # Capture metrics (only at depth 0 to avoid duplicate metrics from recursive calls)
+            if depth == 0:
+                response_time_ms = (time.time() - start_time) * 1000
+                tokens_input = response.usage.prompt_tokens if response.usage else 0
+                tokens_output = (
+                    response.usage.completion_tokens if response.usage else 0
+                )
+
+                logger.info(
+                    f"LLM Structured Metrics - Model: {model_used}, Input tokens: {tokens_input}, "
+                    f"Output tokens: {tokens_output}, Response time: {response_time_ms:.2f}ms"
+                )
+
+                # Record model success and quota
+                total_tokens = tokens_input + tokens_output
+                try:
+                    record_model_success(model_used, response_time_ms, total_tokens)
+                    record_request(model_used, total_tokens)
+                except Exception as e:
+                    logger.warning(f"Failed to record model metrics: {str(e)}")
+
+                # Store metrics asynchronously (non-blocking)
+                try:
+                    asyncio.create_task(
+                        store_metric_async(
+                            model_name=model_used,
+                            tokens_input=tokens_input,
+                            tokens_output=tokens_output,
+                            response_time_ms=response_time_ms,
+                            status="success",
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store structured metrics: {str(e)}")
+        except Exception as e:
+            # Capture error metrics
+            response_time_ms = (time.time() - start_time) * 1000
+            logger.error(f"LLM Structured Request failed: {str(e)}")
+
+            if depth == 0:
+                # Record model failure and general error
+                try:
+                    record_model_failure(model)
+                    record_error()
+
+                    # Check if it's a rate limit error (429)
+                    error_str = str(e).lower()
+                    if (
+                        "429" in error_str
+                        or "rate" in error_str
+                        or "too many requests" in error_str
+                    ):
+                        logger.warning(
+                            f"Rate limit error detected. Triggering exponential backoff."
+                        )
+                        handle_rate_limit_error()
+                        record_rate_limit()
+                except Exception as monitor_error:
+                    logger.warning(
+                        f"Failed to record error monitoring: {str(monitor_error)}"
+                    )
+
+                try:
+                    asyncio.create_task(
+                        store_metric_async(
+                            model_name=model,
+                            tokens_input=0,
+                            tokens_output=0,
+                            response_time_ms=response_time_ms,
+                            status="error",
+                            error_message=str(e),
+                        )
+                    )
+                except Exception as metric_error:
+                    logger.warning(
+                        f"Failed to store structured error metrics: {str(metric_error)}"
+                    )
+            raise
+
+        if response is None or len(response.choices) == 0:
             return None
 
         content = response.choices[0].message.content
@@ -545,7 +792,7 @@ class LLMClient:
                     *messages,
                     OpenAIAssistantMessage(
                         role="assistant",
-                        content=response.choices[0].message.content,
+                        content=content or "",  # Handle None content
                         tool_calls=[each.model_dump() for each in parsed_tool_calls],
                     ),
                     *tool_call_messages,
@@ -828,10 +1075,12 @@ class LLMClient:
                     max_tokens=max_tokens,
                 )
         if content is None:
-            raise HTTPException(
-                status_code=400,
-                detail="LLM did not return any content",
+            # Log warning but don't fail - some free models may return empty responses
+            logger.warning(
+                f"LLM returned empty or None content for structured request with model: {model}. "
+                "This may happen with some free tier models. Returning empty dict."
             )
+            return {}
         return content
 
     # ? Stream Unstructured Content
@@ -845,92 +1094,156 @@ class LLMClient:
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
         client: AsyncOpenAI = self._client
+        start_time = time.time()
 
         tool_calls: List[LLMToolCall] = []
         current_index = 0
         current_id = None
         current_name = None
         current_arguments = None
-        async for event in await client.chat.completions.create(
-            model=model,
-            messages=[message.model_dump() for message in messages],
-            max_completion_tokens=max_tokens,
-            tools=tools,
-            extra_body=extra_body,
-            stream=True,
-        ):
-            event: OpenAIChatCompletionChunk = event
-            if not event.choices:
-                continue
+        model_logged = False
+        model_used = None
+        tokens_input = 0
+        tokens_output = 0
 
-            content_chunk = event.choices[0].delta.content
-            if content_chunk:
-                yield content_chunk
-
-            tool_call_chunk = event.choices[0].delta.tool_calls
-            if tool_call_chunk:
-                tool_index = tool_call_chunk[0].index
-                tool_id = tool_call_chunk[0].id
-                tool_name = tool_call_chunk[0].function.name
-                tool_arguments = tool_call_chunk[0].function.arguments
-
-                if current_index != tool_index:
-                    tool_calls.append(
-                        OpenAIToolCall(
-                            id=current_id,
-                            type="function",
-                            function=OpenAIToolCallFunction(
-                                name=current_name,
-                                arguments=current_arguments,
-                            ),
-                        )
-                    )
-                    current_index = tool_index
-                    current_id = tool_id
-                    current_name = tool_name
-                    current_arguments = tool_arguments
-                else:
-                    current_name = tool_name or current_name
-                    current_id = tool_id or current_id
-                    if current_arguments is None:
-                        current_arguments = tool_arguments
-                    elif tool_arguments:
-                        current_arguments += tool_arguments
-
-        if current_id is not None:
-            tool_calls.append(
-                OpenAIToolCall(
-                    id=current_id,
-                    type="function",
-                    function=OpenAIToolCallFunction(
-                        name=current_name,
-                        arguments=current_arguments,
-                    ),
-                )
-            )
-
-        if tool_calls:
-            tool_call_messages = await self.tool_calls_handler.handle_tool_calls_openai(
-                tool_calls
-            )
-            new_messages = [
-                *messages,
-                OpenAIAssistantMessage(
-                    role="assistant",
-                    content=None,
-                    tool_calls=[each.model_dump() for each in tool_calls],
-                ),
-                *tool_call_messages,
-            ]
-            async for event in self._stream_openai(
+        try:
+            async for event in await client.chat.completions.create(
                 model=model,
-                messages=new_messages,
-                max_tokens=max_tokens,
+                messages=[message.model_dump() for message in messages],
+                max_completion_tokens=max_tokens,
                 tools=tools,
                 extra_body=extra_body,
-                depth=depth + 1,
+                stream=True,
             ):
-                yield event
+                event: OpenAIChatCompletionChunk = event
+
+                # Log model from first chunk and capture for metrics
+                if not model_logged and hasattr(event, "model") and event.model:
+                    model_used = event.model
+                    logger.info(
+                        f"LLM Stream started. Requested model: {model}, Actual model used: {model_used}"
+                    )
+                    model_logged = True
+
+                # Capture token usage from the event if available
+                if hasattr(event, "usage") and event.usage:
+                    tokens_input = event.usage.prompt_tokens or 0
+                    tokens_output = event.usage.completion_tokens or 0
+
+                if not event.choices:
+                    continue
+
+                content_chunk = event.choices[0].delta.content
+                if content_chunk:
+                    yield content_chunk
+
+                tool_call_chunk = event.choices[0].delta.tool_calls
+                if tool_call_chunk:
+                    tool_index = tool_call_chunk[0].index
+                    tool_id = tool_call_chunk[0].id
+                    tool_name = tool_call_chunk[0].function.name
+                    tool_arguments = tool_call_chunk[0].function.arguments
+
+                    if current_index != tool_index:
+                        tool_calls.append(
+                            OpenAIToolCall(
+                                id=current_id,
+                                type="function",
+                                function=OpenAIToolCallFunction(
+                                    name=current_name,
+                                    arguments=current_arguments,
+                                ),
+                            )
+                        )
+                        current_index = tool_index
+                        current_id = tool_id
+                        current_name = tool_name
+                        current_arguments = tool_arguments
+                    else:
+                        current_name = tool_name or current_name
+                        current_id = tool_id or current_id
+                        if current_arguments is None:
+                            current_arguments = tool_arguments
+                        elif tool_arguments:
+                            current_arguments += tool_arguments
+
+            if current_id is not None:
+                tool_calls.append(
+                    OpenAIToolCall(
+                        id=current_id,
+                        type="function",
+                        function=OpenAIToolCallFunction(
+                            name=current_name,
+                            arguments=current_arguments,
+                        ),
+                    )
+                )
+
+            # Capture metrics for streaming (only at depth 0)
+            if depth == 0:
+                response_time_ms = (time.time() - start_time) * 1000
+                logger.info(
+                    f"LLM Stream Metrics - Model: {model_used or model}, Input tokens: {tokens_input}, "
+                    f"Output tokens: {tokens_output}, Response time: {response_time_ms:.2f}ms"
+                )
+
+                try:
+                    asyncio.create_task(
+                        store_metric_async(
+                            model_name=model_used or model,
+                            tokens_input=tokens_input,
+                            tokens_output=tokens_output,
+                            response_time_ms=response_time_ms,
+                            status="success",
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store stream metrics: {str(e)}")
+
+            if tool_calls:
+                tool_call_messages = (
+                    await self.tool_calls_handler.handle_tool_calls_openai(tool_calls)
+                )
+                new_messages = [
+                    *messages,
+                    OpenAIAssistantMessage(
+                        role="assistant",
+                        content=None,
+                        tool_calls=[each.model_dump() for each in tool_calls],
+                    ),
+                    *tool_call_messages,
+                ]
+                async for event in self._stream_openai(
+                    model=model,
+                    messages=new_messages,
+                    max_tokens=max_tokens,
+                    tools=tools,
+                    extra_body=extra_body,
+                    depth=depth + 1,
+                ):
+                    yield event
+        except Exception as e:
+            # Capture error metrics for streaming
+            response_time_ms = (time.time() - start_time) * 1000
+            logger.error(f"LLM Stream failed: {str(e)}")
+
+            if depth == 0:
+                try:
+                    asyncio.create_task(
+                        store_metric_async(
+                            model_name=model_used or model,
+                            tokens_input=0,
+                            tokens_output=0,
+                            response_time_ms=response_time_ms,
+                            status="error",
+                            error_message=str(e),
+                        )
+                    )
+                except Exception as metric_error:
+                    logger.warning(
+                        f"Failed to store stream error metrics: {str(metric_error)}"
+                    )
+            raise
 
     async def _stream_google(
         self,
@@ -1295,7 +1608,6 @@ class LLMClient:
         tools: Optional[List[dict]] = None,
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
-
         client: genai.Client = self._client
 
         google_tools = None
