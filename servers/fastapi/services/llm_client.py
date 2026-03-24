@@ -533,6 +533,65 @@ class LLMClient:
             model=model, messages=messages, max_tokens=max_tokens, depth=depth
         )
 
+    async def _generate_ollama_cloud(
+        self,
+        model: str,
+        messages: List[LLMMessage],
+        max_tokens: Optional[int] = None,
+        depth: int = 0,
+    ):
+        import httpx
+
+        custom_url = get_custom_llm_url_env()
+        api_key = get_custom_llm_api_key_env() or "null"
+
+        # Convert messages to Ollama format
+        ollama_messages = []
+        for msg in messages:
+            if isinstance(msg, LLMSystemMessage):
+                ollama_messages.append({"role": "system", "content": msg.content})
+            elif isinstance(msg, LLMUserMessage):
+                ollama_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, OpenAIAssistantMessage):
+                ollama_messages.append({"role": "assistant", "content": msg.content})
+
+        payload = {"model": model, "messages": ollama_messages, "stream": False}
+
+        if max_tokens:
+            payload["options"] = {"num_predict": max_tokens}
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{custom_url.rstrip('/')}/chat",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+                json=payload,
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Ollama Cloud error: {response.text}",
+                )
+
+            result = response.json()
+            content = result.get("message", {}).get("content", "")
+
+            if not content or not content.strip():
+                if depth < 2:
+                    return await self._generate_ollama_cloud(
+                        model=model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        depth=depth + 1,
+                    )
+                logger.warning(f"Empty response from Ollama Cloud for model: {model}")
+                return ""
+
+            return content
+
     async def _generate_custom(
         self,
         model: str,
@@ -540,6 +599,16 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ):
+        # Special handling for Ollama Cloud
+        custom_url = get_custom_llm_url_env()
+        if custom_url and "ollama.com" in custom_url:
+            return await self._generate_ollama_cloud(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                depth=depth,
+            )
+
         extra_body = {"enable_thinking": False} if self.disable_thinking() else None
         return await self._generate_openai(
             model=model,
@@ -1000,6 +1069,103 @@ class LLMClient:
             depth=depth,
         )
 
+    async def _generate_ollama_cloud_structured(
+        self,
+        model: str,
+        messages: List[LLMMessage],
+        response_format: dict,
+        strict: bool = False,
+        max_tokens: Optional[int] = None,
+        depth: int = 0,
+    ):
+        import httpx
+
+        custom_url = get_custom_llm_url_env()
+        api_key = get_custom_llm_api_key_env() or "null"
+
+        # Build prompt with schema instruction
+        text_content = ""
+        for msg in messages:
+            if isinstance(msg, LLMSystemMessage):
+                text_content += f"System: {msg.content}\n"
+            elif isinstance(msg, LLMUserMessage):
+                text_content += f"User: {msg.content}\n"
+            elif isinstance(msg, OpenAIAssistantMessage):
+                text_content += f"Assistant: {msg.content}\n"
+
+        # Add JSON schema instruction
+        schema_str = json.dumps(response_format, indent=2)
+        text_content += (
+            f"\nRespond ONLY with valid JSON matching this schema:\n{schema_str}\n"
+        )
+
+        ollama_messages = [{"role": "user", "content": text_content}]
+
+        payload = {"model": model, "messages": ollama_messages, "stream": False}
+
+        if max_tokens:
+            payload["options"] = {"num_predict": max_tokens}
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{custom_url.rstrip('/')}/chat",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+                json=payload,
+            )
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Ollama Cloud structured error: {response.text}",
+                )
+
+            result = response.json()
+            content = result.get("message", {}).get("content", "")
+
+            if not content or not content.strip():
+                if depth < 2:
+                    return await self._generate_ollama_cloud_structured(
+                        model=model,
+                        messages=messages,
+                        response_format=response_format,
+                        strict=strict,
+                        max_tokens=max_tokens,
+                        depth=depth + 1,
+                    )
+                logger.warning(
+                    f"Empty response from Ollama Cloud structured for model: {model}"
+                )
+                return {}
+
+            # Try to parse as JSON
+            try:
+                # Extract JSON from response if needed
+                content = content.strip()
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                return json.loads(content.strip())
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"Failed to parse JSON from Ollama Cloud: {e}, content: {content}"
+                )
+                if depth < 2:
+                    return await self._generate_ollama_cloud_structured(
+                        model=model,
+                        messages=messages,
+                        response_format=response_format,
+                        strict=strict,
+                        max_tokens=max_tokens,
+                        depth=depth + 1,
+                    )
+                return {}
+
     async def _generate_custom_structured(
         self,
         model: str,
@@ -1009,6 +1175,18 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ):
+        # Special handling for Ollama Cloud - use Ollama Cloud format
+        custom_url = get_custom_llm_url_env()
+        if custom_url and "ollama.com" in custom_url:
+            return await self._generate_ollama_cloud_structured(
+                model=model,
+                messages=messages,
+                response_format=response_format,
+                strict=strict,
+                max_tokens=max_tokens,
+                depth=depth,
+            )
+
         extra_body = {"enable_thinking": False} if self.disable_thinking() else None
         return await self._generate_openai_structured(
             model=model,
@@ -1392,6 +1570,73 @@ class LLMClient:
             model=model, messages=messages, max_tokens=max_tokens, depth=depth
         )
 
+    def _stream_ollama_cloud(
+        self,
+        model: str,
+        messages: List[LLMMessage],
+        max_tokens: Optional[int] = None,
+        depth: int = 0,
+    ):
+        import httpx
+
+        custom_url = get_custom_llm_url_env()
+        api_key = get_custom_llm_api_key_env() or "null"
+
+        ollama_messages = []
+        for msg in messages:
+            if isinstance(msg, LLMSystemMessage):
+                ollama_messages.append({"role": "system", "content": msg.content})
+            elif isinstance(msg, LLMUserMessage):
+                ollama_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, OpenAIAssistantMessage):
+                ollama_messages.append({"role": "assistant", "content": msg.content})
+
+        payload = {"model": model, "messages": ollama_messages, "stream": True}
+
+        if max_tokens:
+            payload["options"] = {"num_predict": max_tokens}
+
+        async def generate():
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{custom_url.rstrip('/')}/chat",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                    json=payload,
+                ) as response:
+                    if response.status_code != 200:
+                        raise HTTPException(
+                            status_code=response.status_code,
+                            detail=f"Ollama Cloud streaming error: {response.text}",
+                        )
+
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                if data.get("message"):
+                                    content = data["message"].get("content", "")
+                                    if content:
+                                        yield f"data: {json.dumps({'choices': [{'delta': {'content': content}}]})}\n\n"
+                                if data.get("done"):
+                                    break
+                            except json.JSONDecodeError:
+                                continue
+
+        async def async_generator():
+            full_content = ""
+            async for chunk in generate():
+                full_content += json.loads(
+                    chunk.replace("data: ", "").replace("\n\n", "")
+                )["choices"][0]["delta"].get("content", "")
+                yield chunk
+            await record_model_success(model)
+
+        return async_generator()
+
     def _stream_custom(
         self,
         model: str,
@@ -1399,6 +1644,16 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ):
+        # Special handling for Ollama Cloud streaming
+        custom_url = get_custom_llm_url_env()
+        if custom_url and "ollama.com" in custom_url:
+            return self._stream_ollama_cloud(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                depth=depth,
+            )
+
         extra_body = {"enable_thinking": False} if self.disable_thinking() else None
         return self._stream_openai(
             model=model,
@@ -1818,6 +2073,26 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ):
+        # Special handling for Ollama Cloud - use non-streaming
+        custom_url = get_custom_llm_url_env()
+        if custom_url and "ollama.com" in custom_url:
+            # For streaming, we still need to call non-streaming and yield chunks
+            async def generate():
+                result = await self._generate_ollama_cloud_structured(
+                    model=model,
+                    messages=messages,
+                    response_format=response_format,
+                    strict=strict,
+                    max_tokens=max_tokens,
+                    depth=depth,
+                )
+                result_str = json.dumps(result)
+                # Yield one chunk with all content
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': result_str}}]})}\n\n"
+                yield "data: [DONE]\n\n"
+
+            return generate()
+
         extra_body = {"enable_thinking": False} if self.disable_thinking() else None
         return self._stream_openai_structured(
             model=model,
