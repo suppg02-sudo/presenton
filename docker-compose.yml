@@ -19,13 +19,13 @@ services:
       - /home/usdaw/presenton/servers/fastapi/utils/quota_monitor.py:/app/servers/fastapi/utils/quota_monitor.py
       - /home/usdaw/presenton/servers/fastapi/utils/model_monitor.py:/app/servers/fastapi/utils/model_monitor.py
     environment:
-      # LLM Provider - Custom for OpenRouter
+      # LLM Provider - Custom for Ollama Cloud
       - LLM=custom
       
-      # OpenRouter Configuration - Using Google Gemini 2.5 Flash Lite (Free & Reliable)
-      - CUSTOM_LLM_URL=https://openrouter.ai/api/v1
-      - CUSTOM_LLM_API_KEY=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
-      - CUSTOM_MODEL=google/gemini-2.5-flash-lite
+      # Ollama Cloud Configuration
+      - CUSTOM_LLM_URL=https://ollama.com/api
+      - CUSTOM_LLM_API_KEY=cdb37febc63b484188b4063116f0546a.lHNVyoIB8DbBUqCLnmwsWXcm
+      - CUSTOM_MODEL=llama3.2
       
       # Model Generation Settings
       - DISABLE_THINKING=true
