@@ -1,0 +1,262 @@
+version: '3.8'
+
+# Production-optimized Docker Compose configuration for Presenton
+# This configuration includes:
+# - Health checks for all services
+# - Resource limits and constraints
+# - Proper restart policies
+# - Production logging levels
+# - Volume persistence
+# - Network isolation
+# - No hardcoded secrets (use .env file)
+
+services:
+  # FastAPI Backend Service
+  fastapi:
+    image: ghcr.io/presenton/presenton:latest
+    container_name: presenton-fastapi
+    restart: always
+    
+    # Port mapping - only expose through nginx
+    expose:
+      - "8000"
+    
+    # Environment variables - production settings
+    environment:
+      # LLM Configuration
+      - LLM=${LLM:-custom}
+      - CUSTOM_LLM_URL=${CUSTOM_LLM_URL}
+      - CUSTOM_LLM_API_KEY=${CUSTOM_LLM_API_KEY}
+      - CUSTOM_MODEL=${CUSTOM_MODEL:-openrouter/free}
+      
+      # Model Generation Settings
+      - DISABLE_THINKING=${DISABLE_THINKING:-true}
+      - EXTENDED_REASONING=${EXTENDED_REASONING:-false}
+      - TOOL_CALLS=${TOOL_CALLS:-false}
+      - WEB_GROUNDING=${WEB_GROUNDING:-false}
+      
+      # Image Generation
+      - DISABLE_IMAGE_GENERATION=${DISABLE_IMAGE_GENERATION:-true}
+      - IMAGE_PROVIDER=${IMAGE_PROVIDER:-pexels}
+      - PEXELS_API_KEY=${PEXELS_API_KEY:-}
+      - PIXABAY_API_KEY=${PIXABAY_API_KEY:-}
+      
+      # Server Configuration
+      - PORT=8000
+      - HOST=0.0.0.0
+      - DEBUG=false
+      
+      # Logging Configuration
+      - LOG_LEVEL=${LOG_LEVEL:-WARN}
+      - PYTHONUNBUFFERED=1
+      
+      # Metrics Configuration
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
+      
+      # Analytics Configuration
+      - ANALYTICS_RETENTION_DAYS=${ANALYTICS_RETENTION_DAYS:-90}
+      
+      # Security Configuration
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+      - CAN_CHANGE_KEYS=${CAN_CHANGE_KEYS:-false}
+      
+      # Performance Configuration
+      - WORKER_COUNT=${WORKER_COUNT:-4}
+      - TIMEOUT_SECONDS=${TIMEOUT_SECONDS:-1800}
+      
+      # Database Configuration
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app_data/presenton.db}
+    
+    # Volume mounts
+    volumes:
+      # Data persistence
+      - presenton_data:/app_data
+      # Read-only code mount (optional, for custom configurations)
+      - ./servers/fastapi/services/llm_client.py:/app/servers/fastapi/services/llm_client.py:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - presenton_network
+    
+    # Dependency
+    depends_on:
+      - nginx
+
+  # Next.js Frontend Service
+  nextjs:
+    image: ghcr.io/presenton/presenton:latest
+    container_name: presenton-nextjs
+    
+    # Port mapping - only expose through nginx
+    expose:
+      - "3000"
+    
+    # Environment variables
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DEBUG=false
+      - LOG_LEVEL=${LOG_LEVEL:-WARN}
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - presenton_network
+    
+    # Restart policy
+    restart: always
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: presenton-nginx
+    
+    # Port mapping
+    ports:
+      - "80:80"
+      - "443:443"
+    
+    # Configuration and SSL certificates
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - presenton_data:/app_data:ro
+      - ./servers/fastapi/static:/app/servers/fastapi/static:ro
+    
+    # Environment variables
+    environment:
+      - TZ=UTC
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - presenton_network
+    
+    # Restart policy
+    restart: always
+
+  # SQLite Database (optional, for explicit management)
+  # Note: SQLite is file-based and runs within the FastAPI container
+  # This service is optional and can be removed if not needed
+  # database:
+  #   image: sqlite:latest
+  #   container_name: presenton-database
+  #   restart: always
+  #   volumes:
+  #     - presenton_data:/data
+  #   networks:
+  #     - presenton_network
+
+  # Ollama Service (optional, for local LLM models)
+  # Uncomment to enable local model support
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: presenton-ollama
+  #   restart: always
+  #   expose:
+  #     - "11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   environment:
+  #     - OLLAMA_HOST=0.0.0.0:11434
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '4'
+  #         memory: 8G
+  #       reservations:
+  #         cpus: '2'
+  #         memory: 4G
+  #   networks:
+  #     - presenton_network
+  #   restart: always
+
+# Named volumes for data persistence
+volumes:
+  presenton_data:
+    driver: local
+  # ollama_data:
+  #   driver: local
+
+# Network configuration
+networks:
+  presenton_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

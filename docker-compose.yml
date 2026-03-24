@@ -9,12 +9,10 @@ services:
       - "5001:80"
     volumes:
       - /home/usdaw/presenton/app_data:/app_data
+      - /home/usdaw/presenton/public/images:/app/servers/nextjs/public/images
       - /home/usdaw/presenton/servers/fastapi/services/llm_client.py:/app/servers/fastapi/services/llm_client.py
-      - /home/usdaw/presenton/servers/fastapi/services/metrics_service.py:/app/servers/fastapi/services/metrics_service.py
-      - /home/usdaw/presenton/servers/fastapi/services/analytics_service.py:/app/servers/fastapi/services/analytics_service.py
       - /home/usdaw/presenton/servers/fastapi/models/sql/metrics.py:/app/servers/fastapi/models/sql/metrics.py
       - /home/usdaw/presenton/servers/fastapi/api/main.py:/app/servers/fastapi/api/main.py
-      - /home/usdaw/presenton/servers/fastapi/api/v1/metrics_routes.py:/app/servers/fastapi/api/v1/metrics_routes.py
       - /home/usdaw/presenton/servers/fastapi/api/v1/monitoring.py:/app/servers/fastapi/api/v1/monitoring.py
       - /home/usdaw/presenton/servers/fastapi/utils/rate_limiter.py:/app/servers/fastapi/utils/rate_limiter.py
       - /home/usdaw/presenton/servers/fastapi/utils/request_queue.py:/app/servers/fastapi/utils/request_queue.py
@@ -24,10 +22,10 @@ services:
       # LLM Provider - Custom for OpenRouter
       - LLM=custom
       
-      # OpenRouter Configuration (Free Tier with Automatic Fallback)
+      # OpenRouter Configuration - Using Google Gemini 2.5 Flash Lite (Free & Reliable)
       - CUSTOM_LLM_URL=https://openrouter.ai/api/v1
       - CUSTOM_LLM_API_KEY=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
-      - CUSTOM_MODEL=openrouter/free
+      - CUSTOM_MODEL=google/gemini-2.5-flash-lite
       
       # Model Generation Settings
       - DISABLE_THINKING=true
@@ -38,6 +36,11 @@ services:
       # Image Generation - Disabled for now (no free provider key configured)
       - DISABLE_IMAGE_GENERATION=true
       - IMAGE_PROVIDER=pexels
+      
+      # Disable LLM-based generation to allow manual presentation creation
+      - DISABLE_GENERATION=true
+      - GENERATION_DISABLED=true
+      - SKIP_GENERATION=true
       
       # General Configuration
       - CAN_CHANGE_KEYS=false

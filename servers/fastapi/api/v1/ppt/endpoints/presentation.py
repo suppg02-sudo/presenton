@@ -140,7 +140,6 @@ async def create_presentation(
     web_search: Annotated[bool, Body()] = False,
     sql_session: AsyncSession = Depends(get_async_session),
 ):
-
     if include_table_of_contents and n_slides < 3:
         raise HTTPException(
             status_code=400,
@@ -192,12 +191,8 @@ async def prepare_presentation(
     if layout.ordered:
         presentation_structure = layout.to_presentation_structure()
     else:
-        presentation_structure: PresentationStructureModel = (
-            await generate_presentation_structure(
-                presentation_outline=presentation_outline_model,
-                presentation_layout=layout,
-                instructions=presentation.instructions,
-            )
+        presentation_structure = await generate_presentation_structure(
+            presentation_outline_model, layout
         )
 
     presentation_structure.slides = presentation_structure.slides[: len(outlines)]
@@ -544,7 +539,6 @@ async def generate_presentation_handler(
                 request.include_title_slide,
                 request.web_search,
             ):
-
                 if isinstance(chunk, HTTPException):
                     raise chunk
 

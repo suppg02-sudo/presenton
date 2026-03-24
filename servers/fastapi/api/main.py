@@ -5,7 +5,6 @@ from api.middlewares import UserConfigEnvUpdateMiddleware
 from api.v1.ppt.router import API_V1_PPT_ROUTER
 from api.v1.webhook.router import API_V1_WEBHOOK_ROUTER
 from api.v1.mock.router import API_V1_MOCK_ROUTER
-from api.v1.metrics_routes import METRICS_ROUTER
 from api.v1.monitoring import MONITORING_ROUTER
 
 
@@ -16,7 +15,6 @@ app = FastAPI(lifespan=app_lifespan)
 app.include_router(API_V1_PPT_ROUTER)
 app.include_router(API_V1_WEBHOOK_ROUTER)
 app.include_router(API_V1_MOCK_ROUTER)
-app.include_router(METRICS_ROUTER)
 app.include_router(MONITORING_ROUTER)
 
 # Middlewares

@@ -1,105 +1,233 @@
-from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
-
-from models.image_prompt import ImagePrompt
-from models.sql.image_asset import ImageAsset
-from services.database import get_async_session
-from services.image_generation_service import ImageGenerationService
-from utils.asset_directory_utils import get_images_directory
 import os
 import uuid
-from utils.file_utils import get_file_name_with_random_uuid
+from datetime import datetime
+from typing import Optional
+from pathlib import Path
 
-IMAGES_ROUTER = APIRouter(prefix="/images", tags=["Images"])
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
+from ....database import get_async_session
+from ....models.sql.image_asset import ImageAsset
 
-@IMAGES_ROUTER.get("/generate")
-async def generate_image(
-    prompt: str, sql_session: AsyncSession = Depends(get_async_session)
-):
-    images_directory = get_images_directory()
-    image_prompt = ImagePrompt(prompt=prompt)
-    image_generation_service = ImageGenerationService(images_directory)
+# Create router
+IMAGES_ROUTER = APIRouter(prefix="/images", tags=["images"])
 
-    image = await image_generation_service.generate_image(image_prompt)
-    if not isinstance(image, ImageAsset):
-        return image
+# Configuration
+UPLOAD_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent / "public" / "images" / "uploads"
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
-    sql_session.add(image)
-    await sql_session.commit()
-
-    return image.path
-
-
-@IMAGES_ROUTER.get("/generated", response_model=List[ImageAsset])
-async def get_generated_images(sql_session: AsyncSession = Depends(get_async_session)):
-    try:
-        images = await sql_session.scalars(
-            select(ImageAsset)
-            .where(ImageAsset.is_uploaded == False)
-            .order_by(ImageAsset.created_at.desc())
-        )
-        return images
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve generated images: {str(e)}"
-        )
+# Ensure upload directory exists
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @IMAGES_ROUTER.post("/upload")
 async def upload_image(
-    file: UploadFile = File(...), sql_session: AsyncSession = Depends(get_async_session)
+    file: UploadFile = File(...),
+    presentation_id: Optional[str] = None,
+    session: AsyncSession = Depends(get_async_session)
 ):
+    """
+    Upload an image file for use in presentations.
+    
+    Args:
+        file: Image file (JPEG, PNG, WebP, max 5MB)
+        presentation_id: Optional presentation ID to associate image
+        session: Database session
+    
+    Returns:
+        ImageAsset object with public URL
+    """
     try:
-        new_filename = get_file_name_with_random_uuid(file)
-        image_path = os.path.join(
-            get_images_directory(), os.path.basename(new_filename)
+        # Validate file extension
+        file_ext = file.filename.split(".")[-1].lower()
+        if file_ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type not allowed. Supported: {', '.join(ALLOWED_EXTENSIONS)}"
+            )
+        
+        # Read and validate file size
+        file_content = await file.read()
+        if len(file_content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size: 5MB"
+            )
+        
+        # Determine MIME type
+        mime_types = {
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp"
+        }
+        mime_type = mime_types.get(file_ext, "application/octet-stream")
+        
+        # Generate unique filename
+        unique_id = str(uuid.uuid4())
+        new_filename = f"{unique_id}.{file_ext}"
+        file_path = UPLOAD_DIR / new_filename
+        
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        
+        # Create database record
+        image_asset = ImageAsset(
+            id=unique_id,
+            presentation_id=presentation_id,
+            file_name=file.filename,
+            file_path=str(file_path),
+            file_size=len(file_content),
+            mime_type=mime_type,
+            url=f"/images/uploads/{new_filename}",
+            uploaded_at=datetime.now()
         )
-
-        with open(image_path, "wb") as f:
-            f.write(await file.read())
-
-        image_asset = ImageAsset(path=image_path, is_uploaded=True)
-
-        sql_session.add(image_asset)
-        await sql_session.commit()
-
-        return image_asset
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
-
-
-@IMAGES_ROUTER.get("/uploaded", response_model=List[ImageAsset])
-async def get_uploaded_images(sql_session: AsyncSession = Depends(get_async_session)):
-    try:
-        images = await sql_session.scalars(
-            select(ImageAsset)
-            .where(ImageAsset.is_uploaded == True)
-            .order_by(ImageAsset.created_at.desc())
-        )
-        return images
+        
+        session.add(image_asset)
+        await session.commit()
+        await session.refresh(image_asset)
+        
+        return {
+            "success": True,
+            "image_id": image_asset.id,
+            "file_name": image_asset.file_name,
+            "url": image_asset.url,
+            "file_size": image_asset.file_size,
+            "mime_type": image_asset.mime_type,
+            "message": "Image uploaded successfully"
+        }
+    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve uploaded images: {str(e)}"
+            status_code=500,
+            detail=f"Error uploading image: {str(e)}"
         )
 
 
-@IMAGES_ROUTER.delete("/{id}", status_code=204)
-async def delete_uploaded_image_by_id(
-    id: uuid.UUID, sql_session: AsyncSession = Depends(get_async_session)
+@IMAGES_ROUTER.get("/list")
+async def list_images(
+    presentation_id: Optional[str] = None,
+    session: AsyncSession = Depends(get_async_session)
 ):
+    """
+    List uploaded images, optionally filtered by presentation.
+    
+    Args:
+        presentation_id: Optional presentation ID to filter by
+        session: Database session
+    
+    Returns:
+        List of ImageAsset objects
+    """
     try:
-        # Fetch the asset to get its actual file path
-        image = await sql_session.get(ImageAsset, id)
+        if presentation_id:
+            stmt = select(ImageAsset).where(ImageAsset.presentation_id == presentation_id)
+        else:
+            stmt = select(ImageAsset)
+        
+        result = await session.execute(stmt)
+        images = result.scalars().all()
+        
+        return {
+            "success": True,
+            "count": len(images),
+            "images": [
+                {
+                    "id": img.id,
+                    "file_name": img.file_name,
+                    "url": img.url,
+                    "file_size": img.file_size,
+                    "mime_type": img.mime_type,
+                    "uploaded_at": img.uploaded_at,
+                    "presentation_id": img.presentation_id
+                }
+                for img in images
+            ]
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing images: {str(e)}"
+        )
+
+
+@IMAGES_ROUTER.delete("/{image_id}")
+async def delete_image(
+    image_id: str,
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Delete an uploaded image.
+    
+    Args:
+        image_id: Image ID to delete
+        session: Database session
+    
+    Returns:
+        Success message
+    """
+    try:
+        # Find image
+        stmt = select(ImageAsset).where(ImageAsset.id == image_id)
+        result = await session.execute(stmt)
+        image = result.scalar_one_or_none()
+        
         if not image:
             raise HTTPException(status_code=404, detail="Image not found")
-
-        os.remove(image.path)
-
-        await sql_session.delete(image)
-        await sql_session.commit()
-
+        
+        # Delete file
+        if os.path.exists(image.file_path):
+            os.remove(image.file_path)
+        
+        # Delete database record
+        await session.delete(image)
+        await session.commit()
+        
+        return {
+            "success": True,
+            "message": f"Image {image_id} deleted successfully"
+        }
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete image: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting image: {str(e)}"
+        )
+
+
+@IMAGES_ROUTER.get("/pptx-assets")
+async def get_pptx_assets():
+    """
+    Get list of pre-extracted PPTX background images.
+    
+    Returns:
+        List of available PPTX assets
+    """
+    assets_dir = Path(__file__).parent.parent.parent.parent.parent.parent.parent / "public" / "images" / "usdaw-template"
+    
+    assets = []
+    if assets_dir.exists():
+        for file in assets_dir.glob("*"):
+            if file.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+                assets.append({
+                    "id": file.stem,
+                    "name": file.stem.replace("-", " ").title(),
+                    "url": f"/images/usdaw-template/{file.name}",
+                    "file_size": file.stat().st_size
+                })
+    
+    return {
+        "success": True,
+        "count": len(assets),
+        "assets": assets
+    }
+

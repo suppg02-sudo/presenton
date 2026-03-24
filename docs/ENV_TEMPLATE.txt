@@ -1,0 +1,298 @@
+# Presenton Production Environment Configuration
+# ================================================
+# 
+# INSTRUCTIONS:
+# 1. Copy this file to .env: cp ENV_TEMPLATE.txt .env
+# 2. Fill in all required values (marked with [REQUIRED])
+# 3. Adjust optional values as needed for your deployment
+# 4. NEVER commit .env to version control
+# 5. Keep .env secure and restrict access to authorized personnel only
+#
+# SECURITY WARNINGS:
+# - API keys and secrets in this file should be treated as sensitive
+# - Use strong, unique values for all secrets
+# - Rotate API keys regularly
+# - Use environment-specific values (dev, staging, prod)
+# - Never share .env files via email or version control
+#
+
+# ============================================================================
+# LLM CONFIGURATION
+# ============================================================================
+# Configures which LLM provider to use and how to connect to it
+
+# LLM Provider Selection
+# Options: "openai", "anthropic", "google", "custom", "ollama"
+# Default: "custom"
+# Example: LLM=custom
+LLM=custom
+
+# Custom LLM API Endpoint URL
+# Required if LLM=custom
+# Example: https://openrouter.ai/api/v1
+# Example: https://api.openai.com/v1
+CUSTOM_LLM_URL=https://openrouter.ai/api/v1
+
+# Custom LLM API Key
+# [REQUIRED] - Get from your LLM provider
+# Example: sk-or-v1-xxxxxxxxxxxxx (OpenRouter)
+# Example: sk-xxxxxxxxxxxxx (OpenAI)
+# WARNING: Keep this secret! Never commit to version control
+CUSTOM_LLM_API_KEY=
+
+# Custom Model Name
+# The specific model to use from your LLM provider
+# Example: openrouter/free (OpenRouter free tier)
+# Example: gpt-4-turbo (OpenAI)
+# Example: claude-3-opus (Anthropic)
+CUSTOM_MODEL=openrouter/free
+
+# ============================================================================
+# MODEL GENERATION SETTINGS
+# ============================================================================
+# Controls advanced LLM features and capabilities
+
+# Disable Extended Thinking
+# Set to "true" to disable extended thinking/reasoning
+# Default: true
+# Options: "true", "false"
+DISABLE_THINKING=true
+
+# Enable Extended Reasoning
+# Set to "true" to enable extended reasoning capabilities
+# Default: false
+# Options: "true", "false"
+EXTENDED_REASONING=false
+
+# Enable Tool Calls
+# Set to "true" to allow the LLM to call tools/functions
+# Default: false
+# Options: "true", "false"
+TOOL_CALLS=false
+
+# Enable Web Grounding
+# Set to "true" to allow the LLM to search the web for information
+# Default: false
+# Options: "true", "false"
+WEB_GROUNDING=false
+
+# ============================================================================
+# IMAGE GENERATION CONFIGURATION
+# ============================================================================
+# Configures image generation capabilities
+
+# Disable Image Generation
+# Set to "true" to disable all image generation features
+# Default: true (disabled)
+# Options: "true", "false"
+DISABLE_IMAGE_GENERATION=true
+
+# Image Provider Selection
+# Options: "pexels", "pixabay", "unsplash"
+# Default: "pexels"
+# Note: Requires corresponding API key below
+IMAGE_PROVIDER=pexels
+
+# Pexels API Key
+# Get from: https://www.pexels.com/api/
+# Required if IMAGE_PROVIDER=pexels and DISABLE_IMAGE_GENERATION=false
+# Example: 563492ad6f917000010000011234567890abcdef
+PEXELS_API_KEY=
+
+# Pixabay API Key
+# Get from: https://pixabay.com/api/docs/
+# Required if IMAGE_PROVIDER=pixabay and DISABLE_IMAGE_GENERATION=false
+# Example: 12345678-1234567890abcdef1234567890
+PIXABAY_API_KEY=
+
+# Unsplash API Key
+# Get from: https://unsplash.com/oauth/applications
+# Required if IMAGE_PROVIDER=unsplash and DISABLE_IMAGE_GENERATION=false
+# Example: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+UNSPLASH_API_KEY=
+
+# ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+# Configures database connection and persistence
+
+# Database URL
+# SQLite: sqlite:////app_data/presenton.db
+# PostgreSQL: postgresql://user:password@host:5432/dbname
+# MySQL: mysql://user:password@host:3306/dbname
+# Default: sqlite:////app_data/presenton.db
+DATABASE_URL=sqlite:////app_data/presenton.db
+
+# ============================================================================
+# SERVER CONFIGURATION
+# ============================================================================
+# Configures server behavior and networking
+
+# Server Port
+# Port to run the FastAPI server on
+# Default: 8000
+# Note: In production, this is typically behind nginx on port 80/443
+PORT=8000
+
+# Server Host
+# Host to bind the server to
+# Default: 0.0.0.0 (listen on all interfaces)
+# Options: "0.0.0.0", "127.0.0.1", specific IP address
+HOST=0.0.0.0
+
+# Debug Mode
+# Enable debug mode for development
+# WARNING: Never enable in production!
+# Default: false
+# Options: "true", "false"
+DEBUG=false
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+# Configures logging levels and output
+
+# Log Level
+# Controls verbosity of application logs
+# Default: WARN (production)
+# Options: "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"
+# Production: Use "WARN" or "ERROR"
+# Development: Use "DEBUG" or "INFO"
+LOG_LEVEL=WARN
+
+# Python Unbuffered Output
+# Set to 1 to disable Python output buffering
+# Useful for real-time log viewing in containers
+# Default: 1
+PYTHONUNBUFFERED=1
+
+# ============================================================================
+# METRICS CONFIGURATION
+# ============================================================================
+# Configures metrics collection and monitoring
+
+# Enable Metrics Collection
+# Set to "true" to enable metrics collection
+# Default: true
+# Options: "true", "false"
+METRICS_ENABLED=true
+
+# ============================================================================
+# ANALYTICS CONFIGURATION
+# ============================================================================
+# Configures analytics data retention
+
+# Analytics Retention Days
+# Number of days to retain analytics data
+# Default: 90
+# Range: 1-365
+ANALYTICS_RETENTION_DAYS=90
+
+# ============================================================================
+# SECURITY CONFIGURATION
+# ============================================================================
+# Configures security settings and access control
+
+# CORS Origins
+# Comma-separated list of allowed origins for CORS
+# Default: * (allow all)
+# Examples:
+#   CORS_ORIGINS=*
+#   CORS_ORIGINS=https://example.com,https://app.example.com
+#   CORS_ORIGINS=http://localhost:3000,http://localhost:8000
+CORS_ORIGINS=*
+
+# Allowed Hosts
+# Comma-separated list of allowed hostnames
+# Default: * (allow all)
+# Examples:
+#   ALLOWED_HOSTS=*
+#   ALLOWED_HOSTS=example.com,www.example.com,api.example.com
+ALLOWED_HOSTS=*
+
+# Allow Changing API Keys
+# Set to "true" to allow users to change API keys via UI
+# Default: false
+# Options: "true", "false"
+CAN_CHANGE_KEYS=false
+
+# ============================================================================
+# PERFORMANCE CONFIGURATION
+# ============================================================================
+# Configures performance tuning parameters
+
+# Worker Count
+# Number of worker processes for the FastAPI server
+# Default: 4
+# Recommendation: 2 * CPU_CORES
+# Range: 1-16
+WORKER_COUNT=4
+
+# Timeout Seconds
+# Request timeout in seconds
+# Default: 1800 (30 minutes)
+# Range: 30-3600
+TIMEOUT_SECONDS=1800
+
+# ============================================================================
+# OPTIONAL: OLLAMA CONFIGURATION
+# ============================================================================
+# Uncomment and configure if using local Ollama models
+
+# Ollama API URL
+# URL to connect to Ollama service
+# Default: http://localhost:11434
+# Example: http://ollama:11434
+# OLLAMA_API_URL=http://localhost:11434
+
+# Ollama Model Name
+# Name of the model to use from Ollama
+# Example: llama2, mistral, neural-chat
+# OLLAMA_MODEL=llama2
+
+# ============================================================================
+# OPTIONAL: MONITORING AND ALERTING
+# ============================================================================
+# Uncomment and configure if using external monitoring services
+
+# Sentry DSN (Error Tracking)
+# Get from: https://sentry.io/
+# Example: https://xxxxx@xxxxx.ingest.sentry.io/xxxxx
+# SENTRY_DSN=
+
+# Datadog API Key (Metrics and Monitoring)
+# Get from: https://www.datadoghq.com/
+# DATADOG_API_KEY=
+
+# ============================================================================
+# OPTIONAL: BACKUP AND STORAGE
+# ============================================================================
+# Uncomment and configure if using cloud storage for backups
+
+# S3 Bucket Name (AWS S3)
+# Name of the S3 bucket for backups
+# Example: presenton-backups
+# S3_BUCKET_NAME=
+
+# S3 Region (AWS S3)
+# AWS region for the S3 bucket
+# Example: us-east-1
+# S3_REGION=
+
+# S3 Access Key (AWS S3)
+# AWS access key for S3
+# WARNING: Keep this secret!
+# S3_ACCESS_KEY=
+
+# S3 Secret Key (AWS S3)
+# AWS secret key for S3
+# WARNING: Keep this secret!
+# S3_SECRET_KEY=
+
+# ============================================================================
+# OPTIONAL: CUSTOM CONFIGURATION
+# ============================================================================
+# Add any additional custom environment variables below
+
+# Example custom variable:
+# CUSTOM_SETTING=value

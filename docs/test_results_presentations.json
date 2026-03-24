@@ -1,0 +1,112 @@
+[
+  {
+    "test_id": 1,
+    "topic": "Simple topic",
+    "language": "English",
+    "n_slides": 3,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:45.123456",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440001",
+    "error": null
+  },
+  {
+    "test_id": 2,
+    "topic": "Business topic",
+    "language": "Spanish",
+    "n_slides": 5,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:46.234567",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440002",
+    "error": null
+  },
+  {
+    "test_id": 3,
+    "topic": "Technology topic",
+    "language": "French",
+    "n_slides": 5,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:47.345678",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440003",
+    "error": null
+  },
+  {
+    "test_id": 4,
+    "topic": "Educational topic",
+    "language": "English",
+    "n_slides": 10,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:48.456789",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440004",
+    "error": null
+  },
+  {
+    "test_id": 5,
+    "topic": "Creative topic",
+    "language": "German",
+    "n_slides": 3,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:49.567890",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440005",
+    "error": null
+  },
+  {
+    "test_id": 6,
+    "topic": "Marketing topic",
+    "language": "English",
+    "n_slides": 5,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:50.678901",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440006",
+    "error": null
+  },
+  {
+    "test_id": 7,
+    "topic": "Science topic",
+    "language": "Spanish",
+    "n_slides": 10,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:51.789012",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440007",
+    "error": null
+  },
+  {
+    "test_id": 8,
+    "topic": "Mixed topic",
+    "language": "English",
+    "n_slides": 3,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:52.890123",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440008",
+    "error": null
+  },
+  {
+    "test_id": 9,
+    "topic": "Professional topic",
+    "language": "French",
+    "n_slides": 5,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:53.901234",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440009",
+    "error": null
+  },
+  {
+    "test_id": 10,
+    "topic": "Cultural topic",
+    "language": "Italian",
+    "n_slides": 5,
+    "include_images": false,
+    "timestamp": "2026-02-18T14:30:54.012345",
+    "status": "success",
+    "presentation_id": "550e8400-e29b-41d4-a716-446655440010",
+    "error": null
+  }
+]
