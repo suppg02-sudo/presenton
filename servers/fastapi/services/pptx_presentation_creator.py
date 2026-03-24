@@ -143,6 +143,19 @@ class PptxPresentationCreator:
     def add_and_populate_slide(self, slide_model: PptxSlideModel):
         slide = self._ppt.slides.add_slide(self._ppt.slide_layouts[BLANK_SLIDE_LAYOUT])
 
+        if slide_model.background_image:
+            image_path = slide_model.background_image
+            if image_path.startswith("/"):
+                image_path = os.path.join("static", image_path.lstrip("/"))
+            if os.path.exists(image_path):
+                slide.shapes.add_picture(
+                    image_path,
+                    Pt(0),
+                    Pt(0),
+                    self._ppt.slide_width,
+                    self._ppt.slide_height,
+                )
+
         if slide_model.background:
             self.apply_fill_to_shape(slide.background, slide_model.background)
 

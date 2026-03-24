@@ -23,6 +23,7 @@ interface GetAllChildElementsAttributesArgs {
   depth?: number;
   inheritedFont?: ElementAttributes["font"];
   inheritedBackground?: ElementAttributes["background"];
+  inheritedBackgroundImage?: string;
   inheritedBorderRadius?: number[];
   inheritedZIndex?: number;
   inheritedOpacity?: number;
@@ -280,12 +281,14 @@ async function getAllChildElementsAttributes({
   inheritedOpacity,
   screenshotsDir,
 }: GetAllChildElementsAttributesArgs): Promise<SlideAttributesResult> {
+  let backgroundImage = inheritedBackgroundImage;
   if (!rootRect) {
     const rootAttributes = await getElementAttributes(element);
     inheritedFont = rootAttributes.font;
     inheritedBackground = rootAttributes.background;
     inheritedZIndex = rootAttributes.zIndex;
     inheritedOpacity = rootAttributes.opacity;
+    backgroundImage = rootAttributes.backgroundImage;
     rootRect = {
       left: rootAttributes.position?.left ?? 0,
       top: rootAttributes.position?.top ?? 0,
@@ -399,6 +402,7 @@ async function getAllChildElementsAttributes({
       depth: depth + 1,
       inheritedFont: attributes.font || inheritedFont,
       inheritedBackground: attributes.background || inheritedBackground,
+      inheritedBackgroundImage: attributes.backgroundImage || backgroundImage,
       inheritedBorderRadius: attributes.borderRadius || inheritedBorderRadius,
       inheritedZIndex: attributes.zIndex || inheritedZIndex,
       inheritedOpacity: attributes.opacity || inheritedOpacity,
@@ -427,7 +431,9 @@ async function getAllChildElementsAttributes({
     for (const { attributes } of elementsWithRootPosition) {
       if (attributes.background && attributes.background.color) {
         backgroundColor = attributes.background.color;
-        break;
+      }
+      if (attributes.backgroundImage && !backgroundImage) {
+        backgroundImage = attributes.backgroundImage;
       }
     }
   }
@@ -445,6 +451,7 @@ async function getAllChildElementsAttributes({
           const isSvg = attributes.tagName === "svg";
           const isCanvas = attributes.tagName === "canvas";
           const isTable = attributes.tagName === "table";
+          const isBackgroundImage = !!attributes.backgroundImage;
 
           const occupiesRoot =
             attributes.position &&
@@ -456,6 +463,11 @@ async function getAllChildElementsAttributes({
           const hasVisualProperties =
             hasBackground || hasBorder || hasShadow || hasText;
           const hasSpecialContent = hasImage || isSvg || isCanvas || isTable;
+
+          // Exclude background image elements from shapes (they become slide backgrounds)
+          if (occupiesRoot && isBackgroundImage) {
+            return false;
+          }
 
           return (hasVisualProperties && !occupiesRoot) || hasSpecialContent;
         })
@@ -491,11 +503,13 @@ async function getAllChildElementsAttributes({
     return {
       elements: sortedElements,
       backgroundColor,
+      backgroundImage,
     };
   } else {
     return {
       elements: filteredResults.map(({ attributes }) => attributes),
       backgroundColor,
+      backgroundImage,
     };
   }
 }

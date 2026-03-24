@@ -326,6 +326,7 @@ export interface PptxConnectorModel extends PptxShapeModel {
 
 export interface PptxSlideModel {
   background?: PptxFillModel;
+  backgroundImage?: string;
   shapes: (PptxTextBoxModel | PptxAutoShapeBoxModel | PptxConnectorModel | PptxPictureBoxModel)[];
   note?: string;
 }

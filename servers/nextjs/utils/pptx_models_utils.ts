@@ -72,6 +72,20 @@ export function convertElementAttributesToPptxSlides(
       };
     }
 
+    if (slideAttributes.backgroundImage) {
+      // Convert relative paths to absolute paths for server-side access
+      let imagePath = slideAttributes.backgroundImage;
+      if (imagePath.startsWith('/')) {
+        // Convert /images/... paths to static/... paths
+        if (imagePath.startsWith('/images/')) {
+          imagePath = `static${imagePath}`;
+        } else {
+          imagePath = `static${imagePath}`;
+        }
+      }
+      slide.backgroundImage = imagePath;
+    }
+
     return slide;
   });
 }

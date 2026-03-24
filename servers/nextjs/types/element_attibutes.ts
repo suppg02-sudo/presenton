@@ -78,5 +78,6 @@ export interface ElementAttributes {
 export interface SlideAttributesResult {
   elements: ElementAttributes[];
   backgroundColor?: string;
+  backgroundImage?: string;
   speakerNote?: string;
 }

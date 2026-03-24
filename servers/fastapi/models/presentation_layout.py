@@ -9,6 +9,7 @@ class SlideLayoutModel(BaseModel):
     id: str
     name: Optional[str] = None
     description: Optional[str] = None
+    background_image: Optional[str] = None
     json_schema: dict
 
 
