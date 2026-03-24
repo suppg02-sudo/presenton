@@ -23,10 +23,10 @@ services:
       # LLM Provider - Custom for Ollama Cloud
       - LLM=custom
       
-      # Ollama Cloud Configuration - Using Qwen3-VL for vision support
+      # Ollama Cloud Configuration - Using smaller fast model
       - CUSTOM_LLM_URL=https://ollama.com/api
       - CUSTOM_LLM_API_KEY=cdb37febc63b484188b4063116f0546a.lHNVyoIB8DbBUqCLnmwsWXcm
-      - CUSTOM_MODEL=qwen3-vl:235b
+      - CUSTOM_MODEL=qwen3:8b
       
       # Model Generation Settings
       - DISABLE_THINKING=true
