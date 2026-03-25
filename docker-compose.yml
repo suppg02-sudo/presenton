@@ -20,13 +20,12 @@ services:
       - /home/usdaw/presenton/servers/fastapi/utils/model_monitor.py:/app/servers/fastapi/utils/model_monitor.py
       - /home/usdaw/presenton/servers/fastapi/utils/available_models.py:/app/servers/fastapi/utils/available_models.py
     environment:
-      # LLM Provider - Custom for Ollama Cloud
-      - LLM=custom
+      # LLM Provider - Google Gemini
+      - LLM=google
       
-      # Ollama Cloud Configuration - Using gemma3:4b
-      - CUSTOM_LLM_URL=https://ollama.com/api
-      - CUSTOM_LLM_API_KEY=cdb37febc63b484188b4063116f0546a.lHNVyoIB8DbBUqCLnmwsWXcm
-      - CUSTOM_MODEL=gemma3:4b
+      # Google Gemini Configuration
+      - GOOGLE_API_KEY=AIzaSyCJJ_u-VjAu9VKG2QxMY4hTdNqYZe3mpHY
+      - GOOGLE_MODEL=models/gemini-2.5-flash
       
       # Model Generation Settings
       - DISABLE_THINKING=true
