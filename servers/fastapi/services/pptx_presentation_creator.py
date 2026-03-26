@@ -146,10 +146,26 @@ class PptxPresentationCreator:
         if slide_model.background_image:
             image_path = slide_model.background_image
             if image_path.startswith("/"):
-                image_path = os.path.join("static", image_path.lstrip("/"))
-            if os.path.exists(image_path):
+                image_path = image_path.lstrip("/")
+
+            # Try multiple possible paths
+            possible_paths = [
+                image_path,
+                os.path.join("static", image_path),
+                os.path.join("servers/fastapi/static", image_path),
+                os.path.join("/app/static", image_path),
+                os.path.join("/app/servers/fastapi/static", image_path),
+            ]
+
+            actual_path = None
+            for p in possible_paths:
+                if os.path.exists(p):
+                    actual_path = p
+                    break
+
+            if actual_path:
                 slide.shapes.add_picture(
-                    image_path,
+                    actual_path,
                     Pt(0),
                     Pt(0),
                     self._ppt.slide_width,

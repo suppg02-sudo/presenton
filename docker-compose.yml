@@ -10,6 +10,7 @@ services:
     volumes:
       - /home/usdaw/presenton/app_data:/app_data
       - /home/usdaw/presenton/public/images:/app/servers/nextjs/public/images
+      - /home/usdaw/presenton/public/images:/app/servers/fastapi/static/images
       - /home/usdaw/presenton/servers/fastapi/services/llm_client.py:/app/servers/fastapi/services/llm_client.py
       - /home/usdaw/presenton/servers/fastapi/models/sql/metrics.py:/app/servers/fastapi/models/sql/metrics.py
       - /home/usdaw/presenton/servers/fastapi/api/main.py:/app/servers/fastapi/api/main.py
@@ -20,12 +21,13 @@ services:
       - /home/usdaw/presenton/servers/fastapi/utils/model_monitor.py:/app/servers/fastapi/utils/model_monitor.py
       - /home/usdaw/presenton/servers/fastapi/utils/available_models.py:/app/servers/fastapi/utils/available_models.py
     environment:
-      # LLM Provider - Google Gemini
-      - LLM=google
+      # LLM Provider - Custom (Ollama Remote Server)
+      - LLM=custom
       
-      # Google Gemini Configuration
-      - GOOGLE_API_KEY=AIzaSyCytZWlD2A9Jt2MDAbZpkyrZXiWozbHo-g
-      - GOOGLE_MODEL=models/gemini-2.5-flash
+      # Custom Ollama Remote Server
+      - CUSTOM_LLM_URL=http://10.2.14.131:11434/v1
+      - CUSTOM_LLM_API_KEY=ollama
+      - CUSTOM_MODEL=qwen3-vl:8b
       
       # Model Generation Settings
       - DISABLE_THINKING=true
