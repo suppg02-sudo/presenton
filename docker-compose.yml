@@ -24,7 +24,7 @@ services:
       - LLM=google
       
       # Google Gemini Configuration
-      - GOOGLE_API_KEY=AIzaSyCJJ_u-VjAu9VKG2QxMY4hTdNqYZe3mpHY
+      - GOOGLE_API_KEY=AIzaSyCytZWlD2A9Jt2MDAbZpkyrZXiWozbHo-g
       - GOOGLE_MODEL=models/gemini-2.5-flash
       
       # Model Generation Settings
@@ -33,22 +33,14 @@ services:
       - TOOL_CALLS=false
       - WEB_GROUNDING=false
       
-      # Image Generation - Disabled for now (no free provider key configured)
+      # Image Generation - Disabled (requires API key)
       - DISABLE_IMAGE_GENERATION=true
       - IMAGE_PROVIDER=pexels
-      
-      # Disable LLM-based generation to allow manual presentation creation
-      - DISABLE_GENERATION=true
-      - GENERATION_DISABLED=true
-      - SKIP_GENERATION=true
       
       # General Configuration
       - CAN_CHANGE_KEYS=false
       - LOG_LEVEL=DEBUG
       - PYTHONUNBUFFERED=1
       
-      # Optional: Add these after getting free API keys
-      # - DISABLE_IMAGE_GENERATION=false
-      # - PEXELS_API_KEY=<your-pexels-key-when-ready>
-      # OR
-      # - PIXABAY_API_KEY=<your-pixabay-key-when-ready>
+      # Optional: Add Pexels API key for better images
+      # - PEXELS_API_KEY=<your-pexels-key>
