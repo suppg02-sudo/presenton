@@ -21,6 +21,7 @@ services:
       - /home/usdaw/presenton/servers/fastapi/utils/quota_monitor.py:/app/servers/fastapi/utils/quota_monitor.py
       - /home/usdaw/presenton/servers/fastapi/utils/model_monitor.py:/app/servers/fastapi/utils/model_monitor.py
       - /home/usdaw/presenton/servers/fastapi/utils/available_models.py:/app/servers/fastapi/utils/available_models.py
+      - /home/usdaw/presenton/servers/nextjs/app:/app/servers/nextjs/app
     environment:
       # LLM Provider - Google Gemini
       - LLM=google
