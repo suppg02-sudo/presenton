@@ -23,7 +23,7 @@ const OutlinePage: React.FC = () => {
   );
 
   const [activeTab, setActiveTab] = useState<string>(TABS.OUTLINE);
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateLayoutsWithSettings | string | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateLayoutsWithSettings | string | null>("085876ee9c0d4d33bdf19bd250579530");
   // Custom hooks
   const streamState = useOutlineStreaming(presentation_id);
   const { handleDragEnd, handleAddSlide } = useOutlineManagement(outlines);
