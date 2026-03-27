@@ -12,6 +12,7 @@ services:
       - /home/usdaw/presenton/public/images:/app/servers/nextjs/public/images
       - /home/usdaw/presenton/public/images:/app/servers/fastapi/static/images
       - /home/usdaw/presenton/servers/fastapi/services/llm_client.py:/app/servers/fastapi/services/llm_client.py
+      - /home/usdaw/presenton/servers/fastapi/services/pptx_presentation_creator.py:/app/servers/fastapi/services/pptx_presentation_creator.py
       - /home/usdaw/presenton/servers/fastapi/models/sql/metrics.py:/app/servers/fastapi/models/sql/metrics.py
       - /home/usdaw/presenton/servers/fastapi/api/main.py:/app/servers/fastapi/api/main.py
       - /home/usdaw/presenton/servers/fastapi/api/v1/monitoring.py:/app/servers/fastapi/api/v1/monitoring.py
