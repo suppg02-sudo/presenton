@@ -21,13 +21,12 @@ services:
       - /home/usdaw/presenton/servers/fastapi/utils/model_monitor.py:/app/servers/fastapi/utils/model_monitor.py
       - /home/usdaw/presenton/servers/fastapi/utils/available_models.py:/app/servers/fastapi/utils/available_models.py
     environment:
-      # LLM Provider - Custom (Ollama Remote Server)
-      - LLM=custom
+      # LLM Provider - Google Gemini
+      - LLM=google
       
-      # Custom Ollama Remote Server
-      - CUSTOM_LLM_URL=http://10.2.14.131:11434/v1
-      - CUSTOM_LLM_API_KEY=ollama
-      - CUSTOM_MODEL=qwen3-vl:8b
+      # Google Gemini Configuration
+      - GOOGLE_API_KEY=AIzaSyAbaPHeOK0FOqlXjiFze-7OcTkofMv5Y74
+      - GOOGLE_MODEL=models/gemini-2.5-flash
       
       # Model Generation Settings
       - DISABLE_THINKING=true
